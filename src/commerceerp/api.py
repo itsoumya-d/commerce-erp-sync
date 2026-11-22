@@ -5,6 +5,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from .creator_attribution import (
+    CommissionSettlement,
+    CreatorAttributionEngine,
+    CreatorSaleEvent,
+    CreatorSummary,
+)
 from .pipeline import CommerceErpPipeline
 
 
@@ -31,13 +37,19 @@ def _summary(summary) -> dict[str, Any]:
         "unchanged": summary.unchanged,
         "rejected": summary.rejected,
         "dead_letters": [letter.__dict__ for letter in summary.dead_letters],
-        "audit": [entry.__dict__ | {"at": entry.at.isoformat()} for entry in summary.audit],
+        "audit": [
+            entry.__dict__ | {"at": entry.at.isoformat()} for entry in summary.audit
+        ],
     }
 
 
-def create_app(pipeline: CommerceErpPipeline | None = None) -> FastAPI:
+def create_app(
+    pipeline: CommerceErpPipeline | None = None,
+    attribution_engine: CreatorAttributionEngine | None = None,
+) -> FastAPI:
     state = pipeline or CommerceErpPipeline()
-    app = FastAPI(title="Commerce ERP sync", version="0.1.0")
+    attribution = attribution_engine or CreatorAttributionEngine()
+    app = FastAPI(title="Commerce ERP Sync & Creator Attribution", version="0.2.0")
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -52,7 +64,11 @@ def create_app(pipeline: CommerceErpPipeline | None = None) -> FastAPI:
         order, errors = state.ingest_order(payload.order, payload.source_system)
         if order is None:
             raise HTTPException(status_code=422, detail={"errors": errors})
-        return {"order_id": order.order_id, "status": order.status, "total": str(order.total())}
+        return {
+            "order_id": order.order_id,
+            "status": order.status,
+            "total": str(order.total()),
+        }
 
     @app.post("/orders/{order_id}/cancel")
     def cancel_order(order_id: str) -> dict[str, Any]:
@@ -62,11 +78,34 @@ def create_app(pipeline: CommerceErpPipeline | None = None) -> FastAPI:
 
     @app.post("/reconcile")
     def reconcile(payload: ReconcileIn) -> dict[str, Any]:
-        return {"discrepancies": [item.__dict__ for item in state.reconcile_erp(payload.erp)]}
+        return {
+            "discrepancies": [
+                item.__dict__ for item in state.reconcile_erp(payload.erp)
+            ]
+        }
 
     @app.get("/audit")
     def audit() -> dict[str, Any]:
-        return {"audit": [entry.__dict__ | {"at": entry.at.isoformat()} for entry in state.audit]}
+        return {
+            "audit": [
+                entry.__dict__ | {"at": entry.at.isoformat()} for entry in state.audit
+            ]
+        }
+
+    # --- Social Commerce Creator Attribution & Commission APIs ---
+    @app.post("/api/v1/affiliate/sales", response_model=CommissionSettlement)
+    def ingest_creator_sale(payload: CreatorSaleEvent) -> CommissionSettlement:
+        return attribution.ingest_sale_event(payload)
+
+    @app.get(
+        "/api/v1/affiliate/creators/{creator_id}/summary", response_model=CreatorSummary
+    )
+    def get_creator_summary(creator_id: str) -> CreatorSummary:
+        return attribution.get_creator_summary(creator_id)
+
+    @app.get("/api/v1/affiliate/dead-letters")
+    def get_dead_letters() -> dict[str, list[dict[str, Any]]]:
+        return {"dead_letters": attribution.dead_letters}
 
     return app
 
