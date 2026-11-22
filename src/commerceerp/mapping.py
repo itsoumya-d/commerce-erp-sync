@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -91,5 +91,5 @@ def normalize_order(raw: dict[str, Any], source_system: str) -> Order:
         lines=tuple(lines),
         status=status,
         source_system=source_system,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -15,11 +15,13 @@ class Product:
     price: Decimal
     stock: int
     source_system: str
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def fingerprint(self) -> str:
         payload = {"name": self.name, "price": str(self.price), "stock": self.stock}
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:24]
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[
+            :24
+        ]
 
 
 @dataclass(frozen=True)
@@ -35,10 +37,12 @@ class Order:
     lines: tuple[OrderLine, ...]
     status: str
     source_system: str
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def total(self) -> Decimal:
-        return sum((line.unit_price * line.quantity for line in self.lines), Decimal("0.00"))
+        return sum(
+            (line.unit_price * line.quantity for line in self.lines), Decimal("0.00")
+        )
 
 
 @dataclass(frozen=True)

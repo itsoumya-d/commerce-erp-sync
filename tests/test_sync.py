@@ -2,12 +2,17 @@ from decimal import Decimal
 
 import pytest
 
-from commerceerp.mapping import normalize_order, normalize_product
+from commerceerp.mapping import normalize_product
 from commerceerp.pipeline import CommerceErpPipeline
 
 
 def product(**overrides):
-    data = {"sku": "TSHIRT-001", "title": "Merino T-shirt", "price": "$89.90", "stock": "10"}
+    data = {
+        "sku": "TSHIRT-001",
+        "title": "Merino T-shirt",
+        "price": "$89.90",
+        "stock": "10",
+    }
     data.update(overrides)
     return data
 
@@ -40,7 +45,12 @@ def test_normalize_product_rejects_bad_values():
 def test_product_sync_creates_updates_and_skips_unchanged():
     pipeline = CommerceErpPipeline()
     first = pipeline.sync_products([product()], "shopify")
-    assert (first.created, first.updated, first.unchanged, first.rejected) == (1, 0, 0, 0)
+    assert (first.created, first.updated, first.unchanged, first.rejected) == (
+        1,
+        0,
+        0,
+        0,
+    )
     same = pipeline.sync_products([product()], "shopify")
     assert (same.created, same.updated, same.unchanged) == (0, 0, 1)
     changed = pipeline.sync_products([product(stock="4")], "shopify")
@@ -88,7 +98,10 @@ def test_cancel_releases_stock_and_is_idempotent():
 def test_reconcile_reports_price_stock_and_missing_rows():
     pipeline = CommerceErpPipeline()
     pipeline.sync_products([product()], "shopify")
-    rows = [{"item_code": "TSHIRT-001", "sell_price": "99.00", "on_hand": 7}, {"item_code": "HAT-9", "price": "20"}]
+    rows = [
+        {"item_code": "TSHIRT-001", "sell_price": "99.00", "on_hand": 7},
+        {"item_code": "HAT-9", "price": "20"},
+    ]
     kinds = {item.kind for item in pipeline.reconcile_erp(rows)}
     assert {"price_mismatch", "stock_mismatch", "missing_in_commerce"} <= kinds
 
