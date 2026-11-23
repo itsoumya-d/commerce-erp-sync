@@ -12,11 +12,19 @@ from .creator_attribution import (
     CreatorSummary,
 )
 from .pipeline import CommerceErpPipeline
+from .shopify_migration import (
+    MultiCurrencyConfig,
+    ShopifyMigrationService,
+)
 
 
 class ProductSyncIn(BaseModel):
     source_system: str
     records: list[dict[str, Any]]
+
+
+class ShopifyMigrationIn(BaseModel):
+    products: list[dict[str, Any]]
 
 
 class OrderIn(BaseModel):
@@ -46,10 +54,13 @@ def _summary(summary) -> dict[str, Any]:
 def create_app(
     pipeline: CommerceErpPipeline | None = None,
     attribution_engine: CreatorAttributionEngine | None = None,
+    currency_config: MultiCurrencyConfig | None = None,
 ) -> FastAPI:
     state = pipeline or CommerceErpPipeline()
     attribution = attribution_engine or CreatorAttributionEngine()
-    app = FastAPI(title="Commerce ERP Sync & Creator Attribution", version="0.2.0")
+    currencies = currency_config or MultiCurrencyConfig()
+    migration_service = ShopifyMigrationService(state, currencies)
+    app = FastAPI(title="Commerce ERP Sync & Migration Engine", version="0.3.0")
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -106,6 +117,34 @@ def create_app(
     @app.get("/api/v1/affiliate/dead-letters")
     def get_dead_letters() -> dict[str, list[dict[str, Any]]]:
         return {"dead_letters": attribution.dead_letters}
+
+    # --- Shopify Migration & Multi-Currency Catalogue APIs ---
+    @app.post("/api/v1/migration/shopify/products")
+    def migrate_shopify_products(payload: ShopifyMigrationIn) -> dict[str, Any]:
+        report = migration_service.import_products(payload.products)
+        return {
+            "total_received": report.total_received,
+            "products_imported": report.products_imported,
+            "variants_mapped": report.variants_mapped,
+            "errors": report.errors,
+            "multi_currency_summary": report.multi_currency_summary,
+        }
+
+    @app.get("/api/v1/catalogue/multi-currency/{sku}")
+    def get_multi_currency_product(sku: str) -> dict[str, Any]:
+        product = state.products.get(sku)
+        if product is None:
+            raise HTTPException(status_code=404, detail="product not found")
+        prices: dict[str, str] = {}
+        for curr in currencies.exchange_rates:
+            prices[curr] = f"{currencies.get_price(sku, product.price, curr):.2f}"
+        return {
+            "sku": product.sku,
+            "name": product.name,
+            "stock": product.stock,
+            "base_price_nzd": str(product.price),
+            "multi_currency_prices": prices,
+        }
 
     return app
 
